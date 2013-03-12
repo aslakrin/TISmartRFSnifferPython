@@ -125,36 +125,54 @@ ADTypes = enum(
     MANUFACTURER_SPECIFIC    = 0xFF
     )
 
-def friendlyFormatAdvData(adv):
-    """Accepts a tuple of ADType and intlist with data"""
-    adtype, advdata = adv
-    ret = ""
-    if adtype == ADTypes.FLAGS:
-        ret += "LE Limited Discoverable mode, " if advdata[0] & 0x01 else ""
-        ret += "LE General Discoverable mode, " if advdata[0] & 0x02 else ""
-        ret += "BR/EDR Not supported" if advdata[0] & 0x04 else ""
-
-    elif adtype in [ADTypes.SERVICES_16BIT_MORE, ADTypes.SERVICES_16BIT_COMPLETE, ADTypes.SERVICES_LIST_16BIT]:
-        while len(advdata) >= 4:
-            ret += "0x%08X, " % list2int(advdata[:4])
-            advdata = advdata[4:]
-
-    elif adtype in [ADTypes.SERVICES_128BIT_MORE, ADTypes.SERVICES_128BIT_COMPLETE, ADTypes.SERVICES_LIST_128BIT]:
-        while len(advdata) >= 16:
-            ret += "0x%032X, " % list2int(advdata[:16])
-            advdata = advdata[16:]
-
-    elif adtype in [ADTypes.LOCAL_NAME_SHORT, ADTypes.LOCAL_NAME_COMPLETE]:
-        ret += ''.join([chr(x) for x in advdata])
-
-    else:
-        ret += ":".join(["%02X" % x for x in advdata])
-    return ret
 
 TRXAdd = enum(
     PUBLIC = 0x00,
     RANDOM = 0x01
     )
+
+ADAppearances = {
+    0: "Unknown",
+    64: "Generic Phone",
+    128: "Generic Computer",
+    192: "Generic Watch",
+    193: "Watch: Sports Watch",
+    256: "Generic Clock",
+    320: "Generic Display",
+    384: "Generic Remote Control",
+    448: "Generic Eye-glasses",
+    512: "Generic Tag",
+    576: "Generic Keyring",
+    640: "Generic Media Player",
+    704: "Generic Barcode Scanner",
+    768: "Generic Thermometer",
+    769: "Thermometer: Ear",
+    832: "Generic Heart rate Sensor",
+    833: "Heart Rate Sensor: Heart Rate Belt",
+    896: "Generic Blood Pressure",
+    897: "Blood Pressure: Arm",
+    898: "Blood Pressure: Wrist",
+    960: "Human Interface Device (HID)",
+    961: "Keyboard",
+    962: "Mouse",
+    963: "Joystick",
+    964: "Gamepad",
+    965: "Digitizer Tablet",
+    966: "Card Reader",
+    967: "Digital Pen",
+    968: "Barcode Scanner",
+    1024: "Generic Glucose Meter",
+    1088: "Generic: Running Walking Sensor",
+    1089: "Running Walking Sensor: In-Shoe",
+    1090: "Running Walking Sensor: On-Shoe",
+    1091: "Running Walking Sensor: On-Hip",
+    1152: "Generic: Cycling",
+    1153: "Cycling: Cycling Computer",
+    1154: "Cycling: Speed Sensor",
+    1155: "Cycling: Cadence Sensor",
+    1156: "Cycling: Power Sensor",
+    1157: "Cycling: Speed and Cadence Sensor"
+}
 
 def list2int(l):
     ret = 0
@@ -173,9 +191,37 @@ def parseAdvData(a):
         if len(advD) < aLen: break
         ret[aType] = advD[:aLen]
         advD = advD[aLen:]
-        
     return ret
     
+def friendlyFormatAdvData(adv):
+    """Accepts a tuple of ADType and intlist with data"""
+    adtype, advdata = adv
+    ret = ""
+    if adtype == ADTypes.FLAGS:
+        ret += "LE Limited Discoverable mode, " if advdata[0] & 0x01 else ""
+        ret += "LE General Discoverable mode, " if advdata[0] & 0x02 else ""
+        ret += "BR/EDR Not supported" if advdata[0] & 0x04 else ""
+
+    elif adtype in [ADTypes.SERVICES_16BIT_MORE, ADTypes.SERVICES_16BIT_COMPLETE, ADTypes.SERVICES_LIST_16BIT]:
+        while len(advdata) >= 2:
+            ret += "0x%04X, " % list2int(advdata[:2])
+            advdata = advdata[2:]
+
+    elif adtype in [ADTypes.SERVICES_128BIT_MORE, ADTypes.SERVICES_128BIT_COMPLETE, ADTypes.SERVICES_LIST_128BIT]:
+        while len(advdata) >= 16:
+            ret += "0x%032X, " % list2int(advdata[:16])
+            advdata = advdata[16:]
+
+    elif adtype in [ADTypes.LOCAL_NAME_SHORT, ADTypes.LOCAL_NAME_COMPLETE]:
+        ret += ''.join([chr(x) for x in advdata])
+
+    elif adtype == ADTypes.APPEARANCE:
+        ret += ADAppearances[list2int(advdata)]
+    
+    else:
+        ret += ":".join(["%02X" % x for x in advdata])
+
+    return ret
 
 
 class AdvPdu:
@@ -185,7 +231,21 @@ class AdvPdu:
         self.rxAdd = (pdu[0] & 0x80) >> 7
         self.pduLen = pdu[1] & 0x3F
         self.advPdu = pdu[2:]
-        self.pl = self.get_payload()
+
+        self.advInd        = None
+        self.advNonConnInd = None
+        self.advAdvScanInd = None
+        self.advDirecInd   = None
+        self.advScanReq    = None
+        self.advScanRsp    = None
+        self.advConnectReq = None
+
+        if self.pduType == AdvTypes.ADV_IND:          self.advInd        = self.AdvInd(self.advPdu)
+        if self.pduType == AdvTypes.ADV_NON_CONN_IND: self.advNonConnInd = self.AdvNonConnInd(self.advPdu)
+        if self.pduType == AdvTypes.ADV_DIRECT_IND:   self.advDirectInd  = self.AdvDirectInd(self.advPdu)
+        if self.pduType == AdvTypes.ADV_SCAN_REQ:     self.advScanReq    = self.ScanReq(self.advPdu)
+        if self.pduType == AdvTypes.ADV_SCAN_RSP:     self.advScanRsp    = self.ScanRsp(self.advPdu)
+        if self.pduType == AdvTypes.ADV_CONNECT_REQ:  self.advConnectReq = self.ConnectReq(self.advPdu)
 
     # Subclass for parsing Advertisement Indication
     class AdvInd:
@@ -263,24 +323,12 @@ class AdvPdu:
 
 
     def get_payload(self):
-        if self.pduType == AdvTypes.ADV_IND:
-            return self.AdvInd(self.advPdu)
-
-        if self.pduType == AdvTypes.ADV_NON_CONN_IND:
-            return self.AdvNonConnInd(self.advPdu)
-
-        if self.pduType == AdvTypes.ADV_DIRECT_IND:
-            return self.AdvDirectInd(self.advPdu)
-
-        if self.pduType == AdvTypes.ADV_SCAN_REQ:
-            return self.ScanReq(self.advPdu)
-
-        if self.pduType == AdvTypes.ADV_SCAN_RSP:
-            return self.ScanRsp(self.advPdu)
-
-        if self.pduType == AdvTypes.ADV_CONNECT_REQ:
-            return self.ConnectReq(self.advPdu)
-
+        if self.pduType == AdvTypes.ADV_IND: return self.advInd
+        if self.pduType == AdvTypes.ADV_NON_CONN_IND: return self.advNonConnInd
+        if self.pduType == AdvTypes.ADV_DIRECT_IND: return self.advDirectInd
+        if self.pduType == AdvTypes.ADV_SCAN_REQ: return self.advScanReq
+        if self.pduType == AdvTypes.ADV_SCAN_RSP: return self.advScanRsp
+        if self.pduType == AdvTypes.ADV_CONNECT_REQ: return self.advConnectReq
 
         # If it's something we have not implemented
         return None
@@ -292,6 +340,9 @@ class AdvPdu:
         return s
 
 
+###############################################
+##  DATA CHANNEL PDU (LL Control and LL Data)
+###############################################
 class DataPdu:
     def __init__(self, pData):
         self.llid = pData[0] & 0x03
@@ -348,15 +399,22 @@ class Frame:
         self.sync = struct.unpack('I', pData[13:17])[0]
         self.pduCh = ChTypes.ADV if self.sync == 0x8E89BED6 else ChTypes.DATA #ADV access address
 
+        self.advCh = None
+        self.dataCh = None
+
         # Parse pdu data if CRC is ok
         if self.crcOK:
-            self.pl = self.get_ch()
-        else:
-            self.pl = None
+            if self.pduCh == ChTypes.ADV:
+                self.advCh = AdvPdu(self.pdu)
+            elif self.pduCh == ChTypes.DATA:
+                self.dataCh = DataPdu(self.pdu)
 
     def get_ch(self):
+        if not self.crcOK: return None
         if self.pduCh == ChTypes.ADV:
-            return AdvPdu(self.pdu)
+            return self.advCh
+        elif self.pduCh == ChTypes.DATA:
+            return self.dataCh
         return None
         
     def __str__(self):

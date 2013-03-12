@@ -87,16 +87,20 @@ def AnalyzeIncoming(f):
     # Find out whether it was an advertising packet
     if f.pduCh == ChTypes.ADV:
         # Now check if it was a packet with advA
-        if f.pl.pduType in [AdvTypes.ADV_IND, AdvTypes.ADV_DIRECT_IND, AdvTypes.ADV_NON_CONN_IND, AdvTypes.ADV_SCAN_RSP]:
+        if f.advCh.pduType in [AdvTypes.ADV_IND, AdvTypes.ADV_DIRECT_IND, AdvTypes.ADV_NON_CONN_IND, AdvTypes.ADV_SCAN_RSP]:
             # Add advA to knownAdvertisers if it's not known
-            if not f.pl.pl.advA in knownAdvertisers:
-                knownAdvertisers.append(f.pl.pl.advA)
+            advPDU = f.advCh.get_payload()
+            if not advPDU.advA in knownAdvertisers:
+                knownAdvertisers.append(advPDU.advA)
+
+                # Extract local name if any
                 lname = ""
-                if ADTypes.LOCAL_NAME_COMPLETE in f.pl.pl.advDataDict:
-                    lname = f.pl.pl.advDataDict[ADTypes.LOCAL_NAME_COMPLETE]
-                elif ADTypes.LOCAL_NAME_SHORT in f.pl.pl.advDataDict:
-                    lname = f.pl.pl.advDataDict[ADTypes.LOCAL_NAME_SHORT]
-                print "New advertiser: 0x%012X, '%s', RSSI: %d, Total: %d" % (f.pl.pl.advA, lname, f.rssi, len(knownAdvertisers))
+                if ADTypes.LOCAL_NAME_COMPLETE in advPDU.advDataDict:
+                    lname = advPDU.advDataDict[ADTypes.LOCAL_NAME_COMPLETE]
+                elif ADTypes.LOCAL_NAME_SHORT in advPDU.advDataDict:
+                    lname = f.advCh.get_payload().advDataDict[ADTypes.LOCAL_NAME_SHORT]
+
+                print "New advertiser: 0x%012X, '%s', RSSI: %d, Total: %d" % (advPDU.advA, lname, f.rssi, len(knownAdvertisers))
 
                                                                   
 
