@@ -21,6 +21,8 @@ def str2bytes_gen(s):
 def s2b(s):
     return "".join(c for c in str2bytes_gen(s))
 
+def b2ascii(b):
+    return ':'.join(["%02X" % struct.unpack('B', y)[0] for y in b])
 
 # Types of PDU channels
 ChTypes = enum(ADV = 0x01, DATA = 0x02)
@@ -383,6 +385,22 @@ class DataPdu:
     
 class Frame:
     def __init__(self, pData):
+        if len(pData) < 19:
+            self.crcOK = False
+            self.pData = pData
+            self.pNum = -1
+            self.tStamp = -1
+            self.pLen = 0
+            self.ch = 0
+            self.crc = 0
+            self.crc = 0
+            self.pdu = []
+            self.sync = 0
+            self.advCh = 0
+            self.dataCh = 0
+            self.pduCh = ChTypes.ADV
+            return
+
         self.pData = pData
         self.pNum = struct.unpack('I', pData[0:4])[0]
         self.tStamp = struct.unpack('Q', pData[4:12])[0]
@@ -393,10 +411,10 @@ class Frame:
         self.crc = struct.unpack('I',self.crc)[0]
         self.rssi = struct.unpack('B', pData[-2])[0] - 94 # RSSI offset
         self.crcOK = True if struct.unpack('B', pData[-1])[0] & 0x80 != 0 else False
-        self.pdu = [struct.unpack('B', x)[0] for x in pData[17:-5]]
+        self.pdu = [struct.unpack('B', x)[0] for x in pData[19:-5]]
 
         # Find out what type of PDU channel
-        self.sync = struct.unpack('I', pData[13:17])[0]
+        self.sync = struct.unpack('I', pData[15:19])[0]
         self.pduCh = ChTypes.ADV if self.sync == 0x8E89BED6 else ChTypes.DATA #ADV access address
 
         self.advCh = None
@@ -472,7 +490,7 @@ class StreamParser:
         if self.p_state == self.SPStates.WAITING_00:
             if len(self.p_parse) >= 1:
                 sof = struct.unpack('B', self.p_parse[0])[0] # Expect everything to be in order. Could have done forward sanity check but meh.
-                if sof == 0:
+                if sof == 1:
                     self.p_state = self.SPStates.WAITING_LEN
                 self.p_parse = self.p_parse[1:] # Discard leading byte
             else:
@@ -487,8 +505,8 @@ class StreamParser:
 
         if self.p_state == self.SPStates.WAITING_EOF:
             if len(self.p_parse) >= self.STREAM_LEN_OFFSET + self.p_len:
-                ret = self.p_parse[ : self.STREAM_LEN_OFFSET + self.p_len + 1]
-                self.p_parse = self.p_parse[self.STREAM_LEN_OFFSET + self.p_len + 1 : ]
+                ret = self.p_parse[ : self.STREAM_LEN_OFFSET + self.p_len + 2]
+                self.p_parse = self.p_parse[self.STREAM_LEN_OFFSET + self.p_len + 2 : ]
                 self.p_state = self.SPStates.WAITING_00
                 if self.callback is not None:
                     self.callback(ret)

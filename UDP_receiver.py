@@ -21,6 +21,16 @@ def tohex(s):
 def kbfunc():
     return ord(msvcrt.getch()) if msvcrt.kbhit() else 0
 
+def a2ascii(b):
+    return ':'.join(["%02X" % y for y in b])
+
+def a2bin(a):
+    return ''.join([chr(x) for x in a])
+
+def b2ascii(b):
+    return ':'.join(["%02X" % struct.unpack('B', y)[0] for y in b])
+
+
 # Organization of the parsed data into sub-objects:
 #
 # Frame -> Channel -> Payload
@@ -84,6 +94,8 @@ def AnalyzeIncoming(f):
     
     frames.append(f)
 
+    #print f
+
     # Find out whether it was an advertising packet
     if f.pduCh == ChTypes.ADV:
         # Now check if it was a packet with advA
@@ -100,7 +112,7 @@ def AnalyzeIncoming(f):
                 elif ADTypes.LOCAL_NAME_SHORT in advPDU.advDataDict:
                     lname = f.advCh.get_payload().advDataDict[ADTypes.LOCAL_NAME_SHORT]
 
-                print "New advertiser: 0x%012X, '%s', RSSI: %d, Total: %d" % (advPDU.advA, lname, f.rssi, len(knownAdvertisers))
+                print "New advertiser: 0x%012X, '%s' (%s), RSSI: %d, Total: %d" % (advPDU.advA, a2bin(lname), a2ascii(lname), f.rssi, len(knownAdvertisers))
 
                                                                   
 
